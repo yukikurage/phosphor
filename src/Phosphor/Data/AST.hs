@@ -1,4 +1,7 @@
 module Phosphor.Data.AST where
+
+import           Data.Text                      ( Text )
+
 -- コードにおける位置 エラーハンドリングに使う getOffset で取得
 type CodePos = Int
 
