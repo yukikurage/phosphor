@@ -31,7 +31,7 @@ Phospherは制作途中です．
   ];
   
   // 足し算をする関数
-  add : Nat -> Nat = [
+  add : Nat -> Nat -> Nat = [
     Zero, x -> x;
     Suc(x), y -> add(x, Suc(y));
   ];
