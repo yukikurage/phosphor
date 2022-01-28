@@ -26,6 +26,8 @@ source-repository head
 library
   exposed-modules:
       Phosphor.Data.AST
+      Phosphor.Parser
+      Phosphor.Transpiler
   other-modules:
       Paths_phosphor
   hs-source-dirs:
@@ -42,6 +44,7 @@ library
 executable phosphor-exe
   main-is: Main.hs
   other-modules:
+      Options
       Paths_phosphor
   hs-source-dirs:
       app

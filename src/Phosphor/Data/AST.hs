@@ -2,45 +2,91 @@ module Phosphor.Data.AST where
 
 import           Data.Text (Text)
 
--- コードにおける位置 エラーハンドリングに使う getOffset で取得
-type CodePos = Int
+data WithMetaData a = WithMetaData Int -- Locate
+                                   a
+  deriving Show
 
-type Variable = String
+instance Eq a => Eq (WithMetaData a) where
+  (==) (WithMetaData _ a0) (WithMetaData _ a1) = a0 == a1
+
+instance Ord a => Ord (WithMetaData a) where
+  compare (WithMetaData _ a0) (WithMetaData _ a1) = compare a0 a1
+
+type Variable = Text
 
 data AST = AST Text -- Foreign
-               [Statement]
+               Statement
+  deriving (Eq, Ord, Show)
 
-data Statement = StatementDefinition CodePos Definition
-               | StatementData CodePos Variable [Constructor]
+data Statement' = StatementDefinition Definition Statement
+                | StatementData Variable [Constructor] Statement
+                | StatementEnd
+  deriving (Eq, Ord, Show)
 
-data Constructor = Constructor CodePos Variable Type
+type Statement = WithMetaData Statement'
 
-data Definition = Definition CodePos Pattern Expression
+data Constructor' = Constructor Variable Type
+  deriving (Eq, Ord, Show)
 
-data Type = TypeVariable CodePos Variable
-          | TypeFunction CodePos Type Type
+type Constructor = WithMetaData Constructor'
 
-data Pattern = PatternVariable CodePos Variable Type
-             | PatternWildCard CodePos Type
-             | PatternConstructor CodePos Variable
-             | PatternApply CodePos Pattern
+data Definition' = Definition Pattern Expression
+  deriving (Eq, Ord, Show)
 
-data Expression = ExpressionApply CodePos Expression Expression
-                | ExpressionVariable CodePos Variable Type
-                | ExpressionMatch CodePos [([Pattern], Expression)]
-                | ExpressionForeign CodePos Text Type
-                | ExpressionLiteral CodePos Literal
-                | ExpressionDo CodePos Do
-                | ExpressionLet CodePos Let
+type Definition = WithMetaData Definition'
 
-data Do = DoReturn CodePos Expression
-        | DoBind CodePos Pattern Expression Do
-        | DoLet CodePos Pattern Expression Do
+data Type' = TypeVariable Variable
+           | TypeConstructor Variable
+           | TypeFunction Type Type
+           | TypeEffect Type
+  deriving (Eq, Ord, Show)
 
-data Let = Let CodePos [Definition] Expression
+type Type = WithMetaData Type'
 
-data Literal = LiteralString Text
-             | LiteralBool Bool
-             | LiteralChar Char
-             | LiteralInt Int
-             | LiteralFloat Float
+data Pattern' = PatternVariable Variable Type
+              | PatternWildCard Type
+              | PatternConstructor Variable [Pattern]
+              | PatternLiteral Literal
+  deriving (Eq, Ord, Show)
+
+type Pattern = WithMetaData Pattern'
+
+data Expression' = ExpressionApply Expression Expression
+                 | ExpressionVariable Variable
+                 | ExpressionMatch [([Pattern], Expression)]
+                 | ExpressionForeign Text Type
+                 | ExpressionLiteral Literal
+                 | ExpressionDo Do
+                 | ExpressionLet Let
+  deriving (Eq, Ord, Show)
+
+type Expression = WithMetaData Expression'
+
+data Do' = DoReturn Expression
+         | DoEffect Definition Do
+         | DoDefinition Definition Do
+  deriving (Eq, Ord, Show)
+
+type Do = WithMetaData Do'
+
+data Let' = LetDefinition Definition Let
+          | LetReturn Expression
+  deriving (Eq, Ord, Show)
+
+type Let = WithMetaData Let'
+
+data Literal' = LiteralString Text
+              | LiteralBool Bool
+              | LiteralChar Char
+              | LiteralInt Int
+              | LiteralFloat Float
+  deriving (Eq, Ord, Show)
+
+type Literal = WithMetaData Literal'
+
+getFuncNest :: Type' -> Int
+getFuncNest (TypeFunction _ f) = getFuncNestWithMetaData f + 1
+getFuncNest _ = 0
+
+getFuncNestWithMetaData :: Type -> Int
+getFuncNestWithMetaData (WithMetaData _ t) = getFuncNest t

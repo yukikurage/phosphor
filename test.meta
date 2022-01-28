@@ -1,0 +1,4 @@
+data Nat [
+  Zero : Nat;
+  Suc : Nat -> Nat;
+];
