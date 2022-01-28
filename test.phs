@@ -1,0 +1,10 @@
+data Nat [
+  Zero: Nat;
+  Suc: Nat => Nat;
+];
+
+paraFunc: a => a = [
+  x: a -> x;
+];
+
+log: String => {Unit} = str : String -> `console.log($str)`: {Unit};

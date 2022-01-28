@@ -6,6 +6,7 @@ import           Options (optionsParser, outputFile, sourceFile)
 import           Phosphor.Parser (parser)
 import           Options.Applicative (execParser)
 import           Text.Megaparsec (errorBundlePretty, parse)
+import           Phosphor.Transpiler (transpile)
 
 main :: IO ()
 main = do
@@ -14,5 +15,5 @@ main = do
   let res = parse parser (sourceFile options) source
   case res of
     Left err  -> putStrLn $ errorBundlePretty err
-    Right ast -> print ast
+    Right ast -> TIO.writeFile (outputFile options) $ transpile ast
   pure ()

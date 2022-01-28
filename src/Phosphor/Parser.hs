@@ -15,7 +15,7 @@ import           Data.Functor (($>))
 import           Phosphor.Data.AST (WithMetaData(WithMetaData), Literal
                                   , Literal'(LiteralChar, LiteralString, LiteralBool, LiteralInt,
          LiteralFloat), Type
-                                  , Type'(TypeFunction, TypeVariable, TypeEffect), Variable, Constructor
+                                  , Type'(TypeFunction, TypeVariable, TypeEffect, TypeConstructor), Variable, Constructor
                                   , Constructor'(Constructor), Pattern
                                   , Pattern'(PatternConstructor, PatternVariable, PatternWildCard,
          PatternLiteral), Expression
@@ -111,17 +111,22 @@ literalP = withMetaData literalP'
 typeP :: Parser Type
 typeP = withMetaData typeP'
   where
-    typeP' = typeEffect <|> typeFunctionP <|> typeVariableP
+    typeP' =
+      typeEffect <|> typeFunctionP <|> typeConstructorP <|> typeVariableP
 
     typeEffect = TypeEffect <$> braces typeP
 
     typeFunctionP = try
       $ do
-        t0 <- parens typeP <|> withMetaData typeVariableP
-        symbol "->"
+        t0 <- parens typeP
+          <|> withMetaData typeVariableP
+          <|> withMetaData typeConstructorP
+        symbol "=>"
         TypeFunction t0 <$> typeP
 
-    typeVariableP = TypeVariable <$> upperVariableP
+    typeConstructorP = TypeConstructor <$> upperVariableP
+
+    typeVariableP = TypeVariable <$> lowerVariableP
 
 constructorP :: Parser Constructor
 constructorP = withMetaData constructorP'
@@ -132,14 +137,15 @@ constructorP = withMetaData constructorP'
 patternP :: Parser Pattern
 patternP = withMetaData patternP'
   where
-    patternP' = patternWildCardP
+    patternP' = parens patternP'
+      <|> patternWildCardP
       <|> patternConstructorP
       <|> patternVariableP
       <|> patternLiteralP
 
     patternConstructorP = do
       cons <- upperVariableP
-      res <- parens $ sepBy1 patternP $ (symbol "," <|> symbol ")(")
+      res <- parens $ sepBy1 patternP (symbol "," <|> symbol ")(")
       pure $ PatternConstructor cons res
 
     patternVariableP =
@@ -154,8 +160,8 @@ expressionP = withMetaData expressionP'
   where
     expressionP' = parens expressionP'
       <|> expressionForeignP
-      <|> expressionDoP
-      <|> expressionLetP
+      <|> try expressionDoP
+      <|> try expressionLetP
       <|> try expressionMatchP
       <|> expressionLiteralP
       <|> expressionApplyP
@@ -247,7 +253,8 @@ applyP f left right = do
   pure $ foldl (f . WithMetaData o) v xs
 
 variableP :: Parser Variable
-variableP = T.pack
+variableP = lexeme
+  $ T.pack
   <$> ((:) <$> (char '_' <|> letterChar) <*> many (alphaNumChar <|> char '_'))
 
 upperVariableP :: Parser Variable
