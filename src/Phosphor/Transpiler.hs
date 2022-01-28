@@ -41,9 +41,12 @@ bracesT a = "{" <> a <> "}"
 defineT :: Text -> Text -> Text
 defineT a b = a <> "=" <> b <> ";"
 
--- | name=expr;
+-- | const name=expr;
 defineConstT :: Text -> Text -> Text
 defineConstT a b = "const " <> a <> "=" <> b <> ";"
+
+defineExportConstT :: Text -> Text -> Text
+defineExportConstT a b = "export const " <> a <> "=" <> b <> ";"
 
 -- | function name(args){body};
 defineFunctionT :: Text -> [Text] -> Text -> Text
@@ -91,7 +94,7 @@ constructorT = withMetaDataT constructorT'
         classDeclaration = defineFunctionT (classT $ variableT v) args
           $ foldMap (\arg -> defineT ("this." <> arg) arg) args
 
-        makeFunctionDeclaration = defineConstT (variableT v)
+        makeFunctionDeclaration = defineExportConstT (variableT v)
           $ repLambdaT args
           $ "new " <> applyT (classT (variableT v)) args
 
@@ -130,6 +133,20 @@ definitionT line = withMetaDataT definitionT'
 
         temp = "$temp_" <> pack (show line)
 
+definitionExportT :: Int -> Transpiler Definition
+definitionExportT line = withMetaDataT definitionT'
+  where
+    definitionT'
+      (Definition p expr) = defineConstT temp (expressionT expr) <> variables
+      where
+        variables = foldMap
+          (\(ps, v) -> defineExportConstT
+             (variableT v)
+             (temp <> foldMap (\p -> "." <> classVariableT (pack (show p))) ps))
+          $ patternVariables p
+
+        temp = "$temp_" <> pack (show line)
+
 effectT :: Int -> Transpiler Definition
 effectT line = withMetaDataT effectT'
   where
@@ -144,20 +161,20 @@ effectT line = withMetaDataT effectT'
 
         temp = "$temp_" <> pack (show line)
 
-letT :: Transpiler Let
-letT = withMetaDataT $ letT' 0
+letT :: Int -> Transpiler Let
+letT line = withMetaDataT letT'
   where
-    letT' line = \case
-      LetDefinition def rest -> definitionT line def <> letT rest
+    letT' = \case
+      LetDefinition def rest -> definitionT line def <> letT (line + 1) rest
       LetReturn expr         -> returnT $ parensT $ expressionT expr
 
-doT :: Transpiler Do
-doT = withMetaDataT $ doT' 0
+doT :: Int -> Transpiler Do
+doT line = withMetaDataT doT'
   where
-    doT' line = \case
-      DoDefinition def rest -> definitionT line def <> doT rest
+    doT' = \case
+      DoDefinition def rest -> definitionT line def <> doT (line + 1) rest
       DoReturn expr         -> returnT $ parensT $ expressionT expr
-      DoEffect def rest     -> effectT line def <> doT rest
+      DoEffect def rest     -> effectT line def <> doT (line + 1) rest
 
 constructorsT :: [Constructor] -> Text
 constructorsT = foldMap constructorT
@@ -203,8 +220,8 @@ expressionT = withMetaDataT expressionT'
   where
     expressionT' = \case
       ExpressionLiteral l -> literalT l
-      ExpressionDo d -> "()=>{" <> doT d <> "}"
-      ExpressionLet l -> "(()=>{" <> letT l <> "})()" --即時実行する
+      ExpressionDo d -> "()=>{" <> doT 0 d <> "}"
+      ExpressionLet l -> "(()=>{" <> letT 0 l <> "})()" --即時実行する
       ExpressionApply left right -> parensT (expressionT left)
         <> parensT (expressionT right)
       ExpressionForeign t _ -> parensT t
@@ -215,14 +232,15 @@ expressionT = withMetaDataT expressionT'
         where
           maxNest = maximum $ map (\(pes, _) -> length pes) patterns
 
-statementT :: Statement -> Text
-statementT = withMetaDataT $ statementT' 0
+statementT :: Int -> Statement -> Text
+statementT line = withMetaDataT $ statementT'
   where
-    statementT' line = \case
-      StatementData _ constructors rest
-        -> constructorsT constructors <> statementT rest
-      StatementDefinition def rest -> definitionT line def <> statementT rest
+    statementT' = \case
+      StatementData _ constructors rest -> constructorsT constructors
+        <> statementT (line + 1) rest
+      StatementDefinition def rest -> definitionExportT line def
+        <> statementT (line + 1) rest
       StatementEnd -> ""
 
 transpile :: AST -> Text
-transpile (AST ft statement) = ft <> statementT statement
+transpile (AST ft statement) = ft <> statementT 0 statement

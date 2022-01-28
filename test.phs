@@ -7,4 +7,9 @@ paraFunc: a => a = [
   x: a -> x;
 ];
 
-log: String => {Unit} = str : String -> `console.log($str)`: {Unit};
+log: String => {Unit} = str : String -> `() => console.log($str)`: {Unit};
+
+main : {Unit} = do{
+  _ : Unit <- log("Hello Phosphor!");
+  return Unit;
+};

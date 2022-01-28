@@ -1,1 +1,0 @@
-function $Zero_class(){};const $Zero=new $Zero_class();function $Suc_class($$0){this.$$0=$$0;};const $Suc=($$0)=>new $Suc_class($$0);const $temp_0=(($match0)=>{if(true){const $x=$match0;return ($x);}});const $paraFunc=$temp_0;const $temp_0=(($match0)=>{if(true){const $str=$match0;return ((console.log($str)));}});const $log=$temp_0;

@@ -1,0 +1,27 @@
+{
+  "name": "phosphor",
+  "version": "0.0.1",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "build:phosphor": "stack build --exec \"phosphor-exe -stest.phs -oout/test.js\"",
+    "build:esbuild": "node esbuild.js",
+    "build": "npm run build:phosphor && npm run build:esbuild"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yukikurage/phosphor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/yukikurage/phosphor/issues"
+  },
+  "homepage": "https://github.com/yukikurage/phosphor#readme",
+  "devDependencies": {
+    "esbuild": "^0.14.14"
+  }
+}

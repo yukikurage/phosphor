@@ -1,2 +1,5 @@
 .stack-work/
-*~
+node_modules/
+.env
+out/
+public/
