@@ -27,7 +27,9 @@ library
   exposed-modules:
       Phosphor.Data.AST
       Phosphor.Parser
+      Phosphor.Solver
       Phosphor.Transpiler
+      Phosphor.TypeChecker
   other-modules:
       Paths_phosphor
   hs-source-dirs:
@@ -35,7 +37,9 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
+    , filepath >=1.4.2.1
     , megaparsec >=9.0.0
+    , mtl >=2.2.2
     , optparse-applicative >=0.16.1.0
     , text >=1.2.4.1
     , transformers
@@ -52,7 +56,9 @@ executable phosphor-exe
   build-depends:
       base >=4.7 && <5
     , containers
+    , filepath >=1.4.2.1
     , megaparsec >=9.0.0
+    , mtl >=2.2.2
     , optparse-applicative >=0.16.1.0
     , phosphor
     , text >=1.2.4.1
@@ -70,7 +76,9 @@ test-suite phosphor-test
   build-depends:
       base >=4.7 && <5
     , containers
+    , filepath >=1.4.2.1
     , megaparsec >=9.0.0
+    , mtl >=2.2.2
     , optparse-applicative >=0.16.1.0
     , phosphor
     , text >=1.2.4.1

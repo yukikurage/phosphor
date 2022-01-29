@@ -15,8 +15,9 @@ import           Phosphor.Data.AST (WithMetaData(WithMetaData), Literal
                                   , Do'(DoDefinition, DoReturn, DoEffect)
                                   , Expression, Expression'(ExpressionLiteral, ExpressionDo, ExpressionLet,
             ExpressionApply, ExpressionForeign, ExpressionVariable,
-            ExpressionMatch)
-                                  , Statement'(StatementData, StatementDefinition, StatementEnd), Statement, AST(AST))
+            ExpressionMatch, ExpressionArray)
+                                  , Statement'(StatementData, StatementDefinition, StatementEnd), Statement, AST(AST)
+                                  , Variable'(Variable))
 import           Data.Bifunctor (Bifunctor(first))
 
 type Transpiler a = a -> Text
@@ -25,7 +26,7 @@ withMetaDataT :: Transpiler a -> Transpiler (WithMetaData a)
 withMetaDataT f (WithMetaData _ a) = f a
 
 variableT :: Transpiler Variable
-variableT = ("$" <>)
+variableT (WithMetaData _ (Variable t)) = "$" <> t
 
 -- | $$x
 classVariableT :: Transpiler Text
@@ -46,7 +47,7 @@ defineConstT :: Text -> Text -> Text
 defineConstT a b = "const " <> a <> "=" <> b <> ";"
 
 defineExportConstT :: Text -> Text -> Text
-defineExportConstT a b = "export const " <> a <> "=" <> b <> ";"
+defineExportConstT a b = "exports." <> a <> "=" <> b <> ";"
 
 -- | function name(args){body};
 defineFunctionT :: Text -> [Text] -> Text -> Text
@@ -94,9 +95,10 @@ constructorT = withMetaDataT constructorT'
         classDeclaration = defineFunctionT (classT $ variableT v) args
           $ foldMap (\arg -> defineT ("this." <> arg) arg) args
 
-        makeFunctionDeclaration = defineExportConstT (variableT v)
-          $ repLambdaT args
-          $ "new " <> applyT (classT (variableT v)) args
+        makeFunctionDeclaration = defineExportConstT
+          (variableT v)
+          (repLambdaT args $ "new " <> applyT (classT (variableT v)) args)
+          <> defineConstT (variableT v) ("exports." <> variableT v)
 
         args = map
           (classVariableT . pack . show)
@@ -142,7 +144,8 @@ definitionExportT line = withMetaDataT definitionT'
         variables = foldMap
           (\(ps, v) -> defineExportConstT
              (variableT v)
-             (temp <> foldMap (\p -> "." <> classVariableT (pack (show p))) ps))
+             (temp <> foldMap (\p -> "." <> classVariableT (pack (show p))) ps)
+           <> defineConstT (variableT v) ("exports." <> variableT v))
           $ patternVariables p
 
         temp = "$temp_" <> pack (show line)
@@ -194,12 +197,12 @@ patternT maxNest pes e = "if("
            (\(ps, c) -> case c of
               Left v  -> "&&"
                 <> tMatch i
-                <> foldMap (\p -> "." <> classT (pack (show p))) ps
+                <> foldMap (\p -> "." <> classVariableT (pack (show p))) ps
                 <> " instanceof "
                 <> classT (variableT v)
               Right l -> "&&"
                 <> tMatch i
-                <> foldMap (\p -> "." <> classT (pack (show p))) ps
+                <> foldMap (\p -> "." <> classVariableT (pack (show p))) ps
                 <> "==="
                 <> literalT l)
            (patternConstraints (pes !! i)))
@@ -208,7 +211,8 @@ patternT maxNest pes e = "if("
     tVariables = foldMap
       (\i -> foldMap
          (\(ps, v) -> defineConstT (variableT v)
-          $ tMatch i <> foldMap (\p -> "." <> classT (pack (show p))) ps)
+          $ tMatch i
+          <> foldMap (\p -> "." <> classVariableT (pack (show p))) ps)
          (patternVariables (pes !! i)))
       [0 .. length pes - 1]
 
@@ -231,16 +235,20 @@ expressionT = withMetaDataT expressionT'
         <> bracesT (foldMap (uncurry (patternT maxNest)) patterns)
         where
           maxNest = maximum $ map (\(pes, _) -> length pes) patterns
+      ExpressionArray expressions _ -> foldMap expressionT expressions
 
 statementT :: Int -> Statement -> Text
-statementT line = withMetaDataT $ statementT'
+statementT line = withMetaDataT statementT'
   where
     statementT' = \case
-      StatementData _ constructors rest -> constructorsT constructors
+      StatementData _ _ constructors rest -> constructorsT constructors
         <> statementT (line + 1) rest
       StatementDefinition def rest -> definitionExportT line def
         <> statementT (line + 1) rest
       StatementEnd -> ""
 
+primitive :: Text
+primitive = "function $Unit_class(){};exports.$Unit=new $Unit_class();const $Unit=exports.$Unit;"
+
 transpile :: AST -> Text
-transpile (AST ft statement) = ft <> statementT 0 statement
+transpile (AST ft statement) = primitive <> ft <> statementT 0 statement

@@ -5,7 +5,7 @@ module Phosphor.Parser where
 import qualified Text.Megaparsec.Char.Lexer as L
 import           Text.Megaparsec (Parsec, between, manyTill, (<|>), getOffset
                                 , many, sepBy1, MonadParsec(try, eof), manyTill_
-                                , empty)
+                                , empty, sepBy, some)
 import           Data.Void
 import qualified Data.Text as T
 import           Text.Megaparsec.Char (space1, char, letterChar, alphaNumChar
@@ -15,17 +15,21 @@ import           Data.Functor (($>))
 import           Phosphor.Data.AST (WithMetaData(WithMetaData), Literal
                                   , Literal'(LiteralChar, LiteralString, LiteralBool, LiteralInt,
          LiteralFloat), Type
-                                  , Type'(TypeFunction, TypeVariable, TypeEffect, TypeConstructor), Variable, Constructor
+                                  , Type'(TypeFunction, TypeVariable, TypeEffect, TypeConstructor,
+      TypeApply), Variable, Constructor
                                   , Constructor'(Constructor), Pattern
                                   , Pattern'(PatternConstructor, PatternVariable, PatternWildCard,
          PatternLiteral), Expression
                                   , Expression'(ExpressionForeign, ExpressionLiteral,
             ExpressionVariable, ExpressionApply, ExpressionDo, ExpressionLet,
-            ExpressionMatch), Definition
+            ExpressionMatch, ExpressionArray), Definition
                                   , Definition'(Definition), Let
                                   , Let'(LetDefinition, LetReturn), Do
                                   , Do'(DoDefinition, DoReturn, DoEffect)
-                                  , Statement, Statement'(StatementDefinition, StatementEnd, StatementData), AST(AST))
+                                  , Statement, Statement'(StatementDefinition, StatementEnd, StatementData), AST(AST), Kind
+                                  , Kind'(KindType, KindFunction)
+                                  , Variable'(Variable))
+import           Text.Megaparsec.Debug (dbg)
 
 type Parser = Parsec Void T.Text
 
@@ -72,7 +76,24 @@ withMetaData :: Parser a -> Parser (WithMetaData a)
 withMetaData p = WithMetaData <$> getOffset <*> p
 
 parser :: Parser AST
-parser = AST <$> (backQuotes <|> pure "") <*> statementP
+parser = AST <$> {-many importP <*>-} (backQuotes <|> pure "") <*> statementP
+
+-- importP :: Parser Import
+-- importP = withMetaData importP'
+--   where
+--     importP' = symbol "import " *> (Import <$> doubleQuotes) <* symbol ";"
+kindP :: Parser Kind
+kindP = withMetaData kindP'
+  where
+    kindP' = parens kindP' <|> kindFunction <|> kindType
+
+    kindType = symbol "*" $> KindType
+
+    kindFunction = try
+      $ do
+        t0 <- parens kindP <|> withMetaData kindType
+        symbol "=>"
+        KindFunction t0 <$> kindP
 
 statementP :: Parser Statement
 statementP = withMetaData statementP'
@@ -84,11 +105,13 @@ statementP = withMetaData statementP'
     statementDataP = do
       symbol "data "
       s <- upperVariableP
+      symbol ":"
+      k <- kindP
       symbol "["
       res <- many constructorP
       symbol "]"
       symbol ";"
-      StatementData s res <$> statementP
+      StatementData s k res <$> statementP
 
     statementEndP = eof $> StatementEnd
 
@@ -111,20 +134,22 @@ literalP = withMetaData literalP'
 typeP :: Parser Type
 typeP = withMetaData typeP'
   where
-    typeP' =
-      typeEffect <|> typeFunctionP <|> typeConstructorP <|> typeVariableP
+    typeP' = typeEffect <|> typeFunctionP <|> typeApplyP
 
     typeEffect = TypeEffect <$> braces typeP
 
     typeFunctionP = try
       $ do
-        t0 <- parens typeP
-          <|> withMetaData typeVariableP
-          <|> withMetaData typeConstructorP
+        t0 <- withMetaData typeApplyP
         symbol "=>"
         TypeFunction t0 <$> typeP
 
     typeConstructorP = TypeConstructor <$> upperVariableP
+
+    typeApplyP = applyP
+      TypeApply
+      (parens typeP' <|> typeConstructorP <|> typeVariableP)
+      typeP'
 
     typeVariableP = TypeVariable <$> lowerVariableP
 
@@ -145,7 +170,7 @@ patternP = withMetaData patternP'
 
     patternConstructorP = do
       cons <- upperVariableP
-      res <- parens $ sepBy1 patternP (symbol "," <|> symbol ")(")
+      res <- concat <$> many (parens $ sepBy1 patternP (symbol ","))
       pure $ PatternConstructor cons res
 
     patternVariableP =
@@ -158,12 +183,10 @@ patternP = withMetaData patternP'
 expressionP :: Parser Expression
 expressionP = withMetaData expressionP'
   where
-    expressionP' = parens expressionP'
-      <|> expressionForeignP
-      <|> try expressionDoP
-      <|> try expressionLetP
-      <|> try expressionMatchP
+    expressionP' = expressionForeignP
+      <|> try expressionMatchMonoP
       <|> expressionLiteralP
+      <|> try expressionArrayP
       <|> expressionApplyP
 
     expressionForeignP =
@@ -175,7 +198,11 @@ expressionP = withMetaData expressionP'
 
     expressionApplyP = applyP
       ExpressionApply
-      (expressionVariableP <|> parens expressionP')
+      (expressionVariableP
+       <|> try (parens expressionP')
+       <|> try expressionMatchManyP
+       <|> expressionDoP
+       <|> expressionLetP)
       expressionP'
 
     expressionLetP = symbol "let" *> braces (ExpressionLet <$> letP)
@@ -184,18 +211,23 @@ expressionP = withMetaData expressionP'
 
     expressionMatchP = expressionMatchManyP <|> expressionMatchMonoP
 
+    expressionArrayP = ExpressionArray
+      <$> brackets (sepBy expressionP (symbol ","))
+      <* symbol ":"
+      <*> typeP
+
     expressionMatchMonoP = do
-      ps <- sepBy1 patternP (symbol ",")
-      symbol "->"
+      ps <- parens $ sepBy1 patternP (symbol ",")
+      symbol "=>"
       e <- expressionP
       return $ ExpressionMatch [(ps, e)]
 
     expressionMatchManyP = do
       symbol "["
-      res <- many
+      res <- some
         $ do
-          ps <- sepBy1 patternP (symbol ",")
-          symbol "->"
+          ps <- parens $ sepBy1 patternP (symbol ",")
+          symbol "=>"
           e <- expressionP
           symbol ";"
           return (ps, e)
@@ -214,13 +246,22 @@ letP = withMetaData letP'
 doP :: Parser Do
 doP = withMetaData doP'
   where
-    doP' = doReturnP <|> try doEffectP <|> doDefinitionP
+    doP' = try doEffectP <|> try doDefinitionP <|> doReturnP <|> withOutReturn
 
     doDefinitionP = DoDefinition <$> definitionP <*> doP
 
     doEffectP = DoEffect <$> effectP <*> doP
 
     doReturnP = symbol "return " *> (DoReturn <$> expressionP) <* symbol ";"
+
+    withOutReturn = do
+      o <- getOffset
+      pure
+        $ DoReturn
+        $ WithMetaData o
+        $ ExpressionVariable
+        $ WithMetaData o
+        $ Variable "Unit"
 
 returnP :: Parser Expression
 returnP = symbol "return " *> expressionP <* symbol ";"
@@ -232,10 +273,22 @@ definitionP = withMetaData definitionP'
       Definition <$> patternP <* symbol "=" <*> expressionP <* symbol ";"
 
 effectP :: Parser Definition
-effectP = withMetaData effectP'
+effectP = withMetaData $ try effectP' <|> withOutBind
   where
     effectP' =
-      Definition <$> patternP <* symbol "<-" <*> expressionP <* symbol ";"
+      Definition <$> patternP <* symbol "=<" <*> expressionP <* symbol ";"
+
+    withOutBind = do
+      o <- getOffset
+      Definition
+        (WithMetaData o
+         $ PatternWildCard
+         $ WithMetaData o
+         $ TypeConstructor
+         $ WithMetaData o
+         $ Variable "Unit")
+        <$> expressionP
+        <* symbol ";"
 
 -- | ex)
 -- |   p
@@ -253,25 +306,39 @@ applyP f left right = do
   pure $ foldl (f . WithMetaData o) v xs
 
 variableP :: Parser Variable
-variableP = lexeme
-  $ T.pack
-  <$> ((:) <$> (char '_' <|> letterChar) <*> many (alphaNumChar <|> char '_'))
+variableP = withMetaData
+  $ Variable
+  <$> try
+    (lexeme
+     $ (\x -> if x `elem` reservedWords
+              then empty
+              else pure x)
+     . T.pack
+     =<< ((:) <$> (char '_' <|> letterChar)
+          <*> many (alphaNumChar <|> char '_')))
 
 upperVariableP :: Parser Variable
-upperVariableP = lexeme
-  $ (\x -> if x `elem` reservedWords
-           then empty
-           else pure x)
-  . T.pack
-  =<< ((:) <$> (char '_' <|> upperChar) <*> many (alphaNumChar <|> char '_'))
+upperVariableP = withMetaData
+  $ Variable
+  <$> try
+    (lexeme
+     $ (\x -> if x `elem` reservedWords
+              then empty
+              else pure x)
+     . T.pack
+     =<< ((:) <$> upperChar <*> many (alphaNumChar <|> char '_')))
 
 lowerVariableP :: Parser Variable
-lowerVariableP = lexeme
-  $ (\x -> if x `elem` reservedWords
-           then empty
-           else pure x)
-  . T.pack
-  =<< ((:) <$> (char '_' <|> lowerChar) <*> many (alphaNumChar <|> char '_'))
+lowerVariableP = withMetaData
+  $ Variable
+  <$> try
+    (lexeme
+     $ (\x -> if x `elem` reservedWords
+              then empty
+              else pure x)
+     . T.pack
+     =<< ((:) <$> (char '_' <|> lowerChar)
+          <*> many (alphaNumChar <|> char '_')))
 
 reservedWords :: [T.Text]
-reservedWords = ["return", "let", "do", "true", "false", "data"]
+reservedWords = ["return", "let", "do", "true", "false", "data", "import"]

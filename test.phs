@@ -1,15 +1,21 @@
-data Nat [
-  Zero: Nat;
-  Suc: Nat => Nat;
-];
+showInt: Int => String
+  = (x: Int) => `$x.toString()`: String;
 
-paraFunc: a => a = [
-  x: a -> x;
-];
+showChar: Char => String
+  = (x: Char) => `$x.toString()`: String;
 
-log: String => {Unit} = str : String -> `() => console.log($str)`: {Unit};
+showBool: Bool => String
+  = [
+    (true) => "true";
+    (false) => "false";
+  ];
 
-main : {Unit} = do{
-  _ : Unit <- log("Hello Phosphor!");
-  return Unit;
+showFloat: Float => String
+  = (x: Float) => `$x.toString()`: String;
+
+log: String => {Unit}
+  = (x: String) => `() => console.log($x)`: {Unit};
+
+main: {Unit} = do{
+  log(showInt(10));
 };

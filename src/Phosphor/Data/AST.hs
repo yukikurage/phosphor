@@ -1,6 +1,6 @@
 module Phosphor.Data.AST where
 
-import           Data.Text (Text)
+import           Data.Text (Text, unpack)
 
 data WithMetaData a = WithMetaData Int -- Locate
                                    a
@@ -12,14 +12,23 @@ instance Eq a => Eq (WithMetaData a) where
 instance Ord a => Ord (WithMetaData a) where
   compare (WithMetaData _ a0) (WithMetaData _ a1) = compare a0 a1
 
-type Variable = Text
+newtype Variable' = Variable Text
+  deriving (Eq, Ord, Show)
+
+type Variable = WithMetaData Variable'
 
 data AST = AST Text -- Foreign
                Statement
   deriving (Eq, Ord, Show)
 
+-- getImportFiles :: AST -> [String]
+-- getImportFiles (AST imports _ _) =
+--   map (\(WithMetaData _ (Import t)) -> unpack t) imports
+-- newtype Import' = Import Text
+--   deriving (Eq, Ord, Show)
+-- type Import = WithMetaData Import'
 data Statement' = StatementDefinition Definition Statement
-                | StatementData Variable [Constructor] Statement
+                | StatementData Variable Kind [Constructor] Statement
                 | StatementEnd
   deriving (Eq, Ord, Show)
 
@@ -35,10 +44,17 @@ data Definition' = Definition Pattern Expression
 
 type Definition = WithMetaData Definition'
 
+data Kind' = KindType
+           | KindFunction Kind Kind
+  deriving (Eq, Ord, Show)
+
+type Kind = WithMetaData Kind'
+
 data Type' = TypeVariable Variable
            | TypeConstructor Variable
            | TypeFunction Type Type
            | TypeEffect Type
+           | TypeApply Type Type
   deriving (Eq, Ord, Show)
 
 type Type = WithMetaData Type'
@@ -51,13 +67,15 @@ data Pattern' = PatternVariable Variable Type
 
 type Pattern = WithMetaData Pattern'
 
-data Expression' = ExpressionApply Expression Expression
-                 | ExpressionVariable Variable
-                 | ExpressionMatch [([Pattern], Expression)]
-                 | ExpressionForeign Text Type
-                 | ExpressionLiteral Literal
-                 | ExpressionDo Do
-                 | ExpressionLet Let
+data Expression' =
+    ExpressionApply Expression Expression
+  | ExpressionVariable Variable
+  | ExpressionMatch [([Pattern], Expression)]
+  | ExpressionForeign Text Type
+  | ExpressionLiteral Literal
+  | ExpressionDo Do
+  | ExpressionLet Let
+  | ExpressionArray [Expression] Type
   deriving (Eq, Ord, Show)
 
 type Expression = WithMetaData Expression'
@@ -90,3 +108,14 @@ getFuncNest _ = 0
 
 getFuncNestWithMetaData :: Type -> Int
 getFuncNestWithMetaData (WithMetaData _ t) = getFuncNest t
+
+getFuncParams :: Type -> ([Type], Type)
+getFuncParams withMetaData@(WithMetaData _ (TypeFunction t0 t1)) = (t0:ts, t)
+  where
+    (ts, t) = getFuncParams t1
+getFuncParams t = ([], t)
+
+getFuncConstructor :: Type -> Maybe Variable
+getFuncConstructor (WithMetaData _ (TypeConstructor v)) = Just v
+getFuncConstructor (WithMetaData _ (TypeApply t0 t1)) = getFuncConstructor t0
+getFuncConstructor _ = Nothing

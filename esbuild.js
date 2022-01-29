@@ -1,5 +1,5 @@
 require('esbuild').build({
-  entryPoints: ['out/index.js'],
+  entryPoints: ['entry.js'],
   bundle: true,
   outfile: 'public/index.js',
   minify: true,
